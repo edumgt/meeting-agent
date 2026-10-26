@@ -1,50 +1,56 @@
-# AI Meeting Summarizer (KR)
- 
-브라우저에서 **회의를 녹음**하고, 서버에서 **mp3로 저장 + STT 전사 + 회의록 리포트 생성**까지 한 번에 처리하는 실무형 예제입니다. 회의록 외에도 **증권사 애널리스트 리포트 추천 추출/컨센서스 집계**, **AICC 콜센터 통화 QA 어시스턴트**, **글로벌 마켓(환율/세계 시간대/주요국 주가지수) 대시보드** 기능을 함께 제공합니다.
+# AI Meeting Summarizer
 
-- **FE (정적 Static Web UI, FastAPI가 직접 서빙)**
-  - 브라우저 `MediaRecorder` 기반 녹음
-  - 오디오/PDF 업로드 및 전송
-  - 전사 결과 + 마크다운 리포트 + 구조화 JSON 확인
-  - 애널리스트 리포트 추출, 종목 컨센서스 조회, 상담 통화 QA 화면 포함
+**English** | [한국어](readme-kr.md)
+
+A practical example that **records a meeting in the browser** and, on the server, **saves it as mp3, transcribes it (STT), and generates a meeting report** in one pass. Besides meeting notes, it also includes **brokerage analyst-report extraction and consensus aggregation**, an **AICC call-center QA assistant**, and a **global markets dashboard** (FX rates, world time zones, and major equity indices). The default language and NLP models are Korean.
+
+- **FE (static web UI, served directly by FastAPI)**
+  - Browser recording with `MediaRecorder`
+  - Audio and PDF upload
+  - Transcript, markdown report, and structured JSON review
+  - Analyst-report extraction, ticker consensus lookup, and call QA screens
 - **BE (FastAPI)**
-  - 오디오 → mp3 변환(`ffmpeg`)
-  - OpenAI 음성 전사(`gpt-4o-mini-transcribe` 기본)
-  - 기존 AI 파이프라인(요약/추출/리포트) 연동
-  - 애널리스트 리포트/콜 QA 이력을 Postgres(공유 인스턴스)에 저장
+  - Audio → mp3 conversion (`ffmpeg`)
+  - OpenAI speech transcription (`gpt-4o-mini-transcribe` by default)
+  - Existing AI pipeline (summary / extraction / report)
+  - Analyst reports and call QA history stored in Postgres (shared instance)
 
 ---
+
+If `ffmpeg` is missing, the server returns:
+
 ```
 Error: HTTP 500: {"detail":"ffmpeg is not installed on server."}
 ```
+
 ```
 sudo apt update
 sudo apt install -y ffmpeg
 ```
 
-## 1. 아키텍처
+## 1. Architecture
 
-1) FE에서 녹음(webm) 또는 오디오 파일 업로드  
-2) `POST /transcribe-and-report`로 전송  
-3) BE에서 mp3 변환 후 서버 디렉터리에 저장  
-4) OpenAI STT로 텍스트 전사  
-5) 기존 `/report` 파이프라인으로 요약 + 의사결정/액션아이템 추출  
-6) FE에서 결과 표시 및 mp3 다운로드 링크 제공
+1) Record in the FE (webm) or upload an audio file  
+2) Send it with `POST /transcribe-and-report`  
+3) The BE converts it to mp3 and stores it in a server directory  
+4) Transcribe the audio with OpenAI STT  
+5) Run the existing `/report` pipeline to summarize and extract decisions and action items  
+6) Show the result in the FE, including an mp3 download link
 
 ---
 
-## 2. 요구사항
+## 2. Requirements
 
 - Python 3.10+
-- `ffmpeg` (서버 오디오 변환용)
-- `OPENAI_API_KEY` 환경 변수
-- (애널리스트/콜 QA 기능 사용 시) 접근 가능한 Postgres 인스턴스 — 없어도 회의록 핵심 기능은 정상 동작
+- `ffmpeg` (server-side audio conversion)
+- `OPENAI_API_KEY` environment variable
+- A reachable Postgres instance when using analyst or call QA features — meeting-note core features work without it
 
 ---
 
-## 3. 빠른 시작
+## 3. Quick start
 
-### 3.1 서버 실행 (venv)
+### 3.1 Run the server (venv)
 
 ```bash
 python3 -m venv .venv
@@ -55,98 +61,100 @@ export OPENAI_API_KEY=""
 export TRANSCRIBE_MODEL="gpt-4o-mini-transcribe"
 export TRANSCRIBE_LANGUAGE="ko"
 export MP3_OUTPUT_DIR="/tmp/ai_meeting_audio"
-# 애널리스트/콜 QA 기능을 쓰려면 Postgres 접속 정보도 설정(없으면 해당 기능만 비활성화)
+# Set Postgres connection settings to enable analyst / call QA (those features stay disabled otherwise)
 export POSTGRES_HOST="localhost"
 export POSTGRES_PASSWORD="password"
 
 uvicorn app:app --host 0.0.0.0 --port 8000 --app-dir server
 ```
 
-> `analyst.py`/`callcenter.py`/`pipeline.py`/`db.py`/`tickers.py`가 `server/` 안에서 서로를 flat 모듈(`import pipeline`, `import db` 등)로 참조하므로, 반드시 `--app-dir server`로 `server/`를 임포트 루트에 두고 `app:app`(점 표기 아님)으로 실행해야 합니다. Docker 이미지도 동일하게 `WORKDIR /app`에 `server/`의 내용을 그대로 복사한 뒤 `app:app`으로 실행합니다.
+> `analyst.py`, `callcenter.py`, `pipeline.py`, `db.py`, and `tickers.py` import one another as flat modules from inside `server/` (`import pipeline`, `import db`, and so on). Run with `--app-dir server` so that `server/` is the import root, and start `app:app` (not dotted module notation). The Docker image does the same: it copies the contents of `server/` into `WORKDIR /app` and starts `app:app`.
 
-웹 UI는 별도 서버 없이 `http://localhost:8000` 에서 FastAPI가 직접 서빙합니다(`client/public`을 `/static`으로 복사해 마운트).
+FastAPI serves the web UI directly at `http://localhost:8000` — there is no separate frontend server (`client/public` is copied and mounted at `/static`).
 
 - Web: http://localhost:8000
 - API docs: http://localhost:8000/docs
 
-### 3.2 docker-compose 실행
+### 3.2 Run with docker-compose
 
 ```bash
 docker compose up --build
 ```
 
-`docker-compose.yml`은 `shared-net`이라는 외부 Docker 네트워크에 연결해, 그 네트워크에 이미 떠 있는 `postgres` 컨테이너를 재사용합니다. 네트워크가 없다면 먼저 `docker network create shared-net` 후 Postgres 컨테이너를 붙이거나, Postgres 없이 회의록 기능만 사용할 계획이면 `docker-compose.yml`에서 `shared-net` 관련 설정을 제거해도 됩니다.
+`docker-compose.yml` attaches to an external Docker network named `shared-net` and reuses a `postgres` container already running on that network. If the network does not exist, create it with `docker network create shared-net` and attach the Postgres container. If you only need meeting notes, you can remove the `shared-net` settings from `docker-compose.yml`.
 
 ---
 
-## 4. 핵심 API
+## 4. Core APIs
 
-### 4.1 `POST /transcribe-and-report` (신규)
+### 4.1 `POST /transcribe-and-report`
 
-`multipart/form-data`로 오디오를 업로드해 전사 + 리포트를 한 번에 받습니다.
+Upload audio as `multipart/form-data` and get a transcript and report in one request.
 
-필드:
-- `audio` (필수): 업로드 파일
-- `meeting_title` (선택)
-- `meeting_date_hint` (선택, `YYYY-MM-DD`)
-- `include_summary` (선택, `true/false`)
-- `language` (선택, 기본 `ko`)
+Fields:
 
-응답:
-- `transcript`: 전사 텍스트
-- `markdown`: 정리 회의록
-- `extracted`: 구조화 결과(JSON)
-- `mp3_download_url`, `mp3_file_name`: 서버 저장 mp3 접근 정보
+- `audio` (required): uploaded file
+- `meeting_title` (optional)
+- `meeting_date_hint` (optional, `YYYY-MM-DD`)
+- `include_summary` (optional, `true`/`false`)
+- `language` (optional, default `ko`)
 
-예시:
+Response:
+
+- `transcript`: transcribed text
+- `markdown`: formatted meeting notes
+- `extracted`: structured result (JSON)
+- `mp3_download_url`, `mp3_file_name`: access info for the mp3 stored on the server
+
+Example:
 
 ```bash
 curl -X POST "http://localhost:8000/transcribe-and-report" \
   -F "audio=@./sample.webm" \
-  -F "meeting_title=주간 개발 회의" \
+  -F "meeting_title=Weekly engineering sync" \
   -F "meeting_date_hint=2026-02-08" \
   -F "include_summary=true"
 ```
 
-### 4.2 `GET /audio/{file_name}` (신규)
+### 4.2 `GET /audio/{file_name}`
 
-서버에 저장된 mp3를 다운로드합니다.
+Download an mp3 stored on the server.
 
-### 4.3 애널리스트 리포트 (신규)
+### 4.3 Analyst reports
 
-- `POST /analyst-report`: JSON `{ text, analyst_firm, report_date_hint }` → 투자의견/목표주가/근거 추출
-- `POST /analyst-report/pdf`: PDF 업로드로 동일 추출 수행
-- `GET /analyst-consensus/{ticker}`: 누적된 리포트로 종목별 컨센서스(의견 분포, 목표주가 평균/최소/최대) 조회
+- `POST /analyst-report`: JSON `{ text, analyst_firm, report_date_hint }` → extract rating, target price, and rationale
+- `POST /analyst-report/pdf`: same extraction from an uploaded PDF
+- `GET /analyst-consensus/{ticker}`: ticker consensus from accumulated reports (opinion distribution, target-price average / min / max)
 
 ```bash
 curl -X POST "http://localhost:8000/analyst-report" \
   -H "Content-Type: application/json" \
-  -d '{"text": "삼성전자 매수 의견 유지, 목표주가 90,000원으로 상향. 투자포인트: 메모리 업황 개선", "analyst_firm": "한국증권"}'
+  -d '{"text": "Maintain Buy on Samsung Electronics; raise target price to KRW 90,000. Investment point: memory cycle improvement", "analyst_firm": "Korea Securities"}'
 
 curl "http://localhost:8000/analyst-consensus/005930"
 ```
 
-### 4.4 상담 통화 QA / AICC (신규)
+### 4.4 Call QA / AICC
 
-- `POST /call-summary`: 상담 녹음(multipart) 업로드 → 전사 → 문의유형/주문요청/컴플라이언스 체크/리스크 등급 산출
-- `GET /call-summary/{call_id}`: 저장된 콜 QA 리포트 단건 조회
+- `POST /call-summary`: upload a call recording (multipart) → transcribe → inquiry type, order request, compliance check, and risk grade
+- `GET /call-summary/{call_id}`: fetch one stored call QA report
 
-실제 착신(IVR)/CTI/실시간 스트리밍/상담원 자동 배분 기능은 포함하지 않습니다(녹음 사후 업로드 방식). 컴플라이언스 체크는 키워드 매칭 기반의 참고용 휴리스틱이며 법적 요건을 담보하지 않습니다.
+Inbound handling (IVR), CTI, real-time streaming, and automatic agent assignment are not included (post-call upload only). Compliance checks are keyword-matching heuristics for reference and do not satisfy legal requirements by themselves.
 
 ```bash
 curl -X POST "http://localhost:8000/call-summary" \
   -F "audio=@./call.webm" \
-  -F "agent_name=홍길동" \
+  -F "agent_name=Hong Gildong" \
   -F "ai_provider=openai"
 ```
 
-### 4.5 글로벌 마켓 (신규)
+### 4.5 Global markets
 
-- `GET /market-overview` (`?refresh=true`로 캐시 무시하고 즉시 재조회): 원화(KRW) 기준 주요국 환율 + 주요국 주가지수(KOSPI/KOSDAQ 포함 8개)
-- 환율은 [open.er-api.com](https://www.exchangerate-api.com/docs/free)(공식 무료 API), 주가지수는 Yahoo Finance 비공식 차트 엔드포인트를 사용하며 API 키가 필요 없습니다.
-- 서버에서 5분 TTL로 캐시하며, 개별 통화/지수 조회 실패는 해당 항목만 `error` 필드로 표시되고 나머지 응답에는 영향을 주지 않습니다.
-- 세계 시간대는 서버 호출 없이 브라우저 `Intl.DateTimeFormat`으로 계산됩니다(외부 API 상태와 무관하게 항상 정확).
-- **주의**: 주가지수 데이터 소스(Yahoo 비공식 엔드포인트)는 문서화되지 않은 API로, 사전 통보 없이 응답 형식이 바뀌거나 접근이 막힐 수 있습니다. 실거래/투자 판단용이 아닌 참고용입니다.
+- `GET /market-overview` (`?refresh=true` bypasses the cache and refetches immediately): major FX rates quoted in KRW, plus major equity indices (8, including KOSPI and KOSDAQ)
+- FX rates come from [open.er-api.com](https://www.exchangerate-api.com/docs/free) (official free API). Indices come from Yahoo Finance's unofficial chart endpoint. No API key is required.
+- The server caches results for 5 minutes. A failed lookup for one currency or index is reported only on that item's `error` field and does not affect the rest of the response.
+- World time zones are computed in the browser with `Intl.DateTimeFormat` and stay accurate regardless of external API status.
+- **Caution**: the index source (Yahoo's unofficial endpoint) is an undocumented API. Its response format may change, or access may be blocked, without notice. Use it for reference only — not for trading or investment decisions.
 
 ```bash
 curl "http://localhost:8000/market-overview"
@@ -155,49 +163,51 @@ curl "http://localhost:8000/market-overview?refresh=true"
 
 ---
 
-## 5. 환경 변수
+## 5. Environment variables
 
-### 기존 NLP
-- `SUM_MODEL_ID` (기본 `gogamza/kobart-summarization`)
-- `CLS_MODEL_ID` (기본 `Seonghaa/korean-emotion-classifier-roberta`)
-- `EMB_MODEL_ID` (기본 `upskyy/bge-m3-korean`)
+### Existing NLP
+
+- `SUM_MODEL_ID` (default `gogamza/kobart-summarization`)
+- `CLS_MODEL_ID` (default `Seonghaa/korean-emotion-classifier-roberta`)
+- `EMB_MODEL_ID` (default `upskyy/bge-m3-korean`)
 - `CHUNK_MAX_TOKENS`, `REDUCE_MAX_TOKENS`
 
-### 신규 음성 파이프라인
-- `OPENAI_API_KEY` (필수)
-- `TRANSCRIBE_MODEL` (기본 `gpt-4o-mini-transcribe`)
-- `TRANSCRIBE_LANGUAGE` (기본 `ko`)
-- `MP3_OUTPUT_DIR` (기본 `/tmp/ai_meeting_audio`)
+### Speech pipeline
 
-### 애널리스트 리포트 / 콜 QA 저장 (Postgres, 신규)
-- `POSTGRES_HOST` (기본 `postgres`) — docker-compose 사용 시 `shared-net`에 떠 있는 공유 Postgres 컨테이너 이름
-- `POSTGRES_PORT` (기본 `5432`)
-- `POSTGRES_USER` (기본 `postgres`)
-- `POSTGRES_PASSWORD` (기본 `password`, `.env`로 오버라이드 권장)
-- `POSTGRES_MAINTENANCE_DB` (기본 `postgres`) — 최초 기동 시 전용 DB 생성 여부 확인용
-- `POSTGRES_DB` (기본 `meeting_agent`) — 이 앱 전용 DB. 여러 랩 프로젝트가 같은 Postgres 인스턴스를 공유해도 테이블이 섞이지 않도록 분리
-- Postgres 연결에 실패해도 회의록 핵심 기능(요약/분류/임베딩)은 정상 동작하며, `/analyst-report*`/`/call-summary*`만 영향을 받습니다.
+- `OPENAI_API_KEY` (required)
+- `TRANSCRIBE_MODEL` (default `gpt-4o-mini-transcribe`)
+- `TRANSCRIBE_LANGUAGE` (default `ko`)
+- `MP3_OUTPUT_DIR` (default `/tmp/ai_meeting_audio`)
 
----
+### Analyst report / call QA storage (Postgres)
 
-## 6. 운영 팁 (실무)
-
-- mp3 저장소(`MP3_OUTPUT_DIR`)를 영속 볼륨으로 마운트하세요.
-- 파일 보관 정책(예: 7일 후 삭제) 배치 작업을 추가하세요.
-- CORS 허용 도메인을 운영 도메인으로 제한하세요.
-- STT 비용 관리를 위해 파일 길이 제한 및 요청 인증(JWT/API Key)을 붙이세요.
-- 콜 QA의 컴플라이언스 키워드 목록(`server/callcenter.py`의 `BANNED_PHRASES`/`REQUIRED_DISCLOSURES`)은 참고용 시드입니다. 운영 적용 전 컴플라이언스 팀 검토를 받으세요.
-- 종목 매핑(`server/data/tickers_kr.json`)은 정적 시드입니다. 실제 서비스에서는 KRX 등 공식 종목마스터로 교체하세요.
+- `POSTGRES_HOST` (default `postgres`) — with docker-compose, the shared Postgres container name on `shared-net`
+- `POSTGRES_PORT` (default `5432`)
+- `POSTGRES_USER` (default `postgres`)
+- `POSTGRES_PASSWORD` (default `password`; override via `.env`)
+- `POSTGRES_MAINTENANCE_DB` (default `postgres`) — used on first startup to check whether the dedicated database should be created
+- `POSTGRES_DB` (default `meeting_agent`) — database for this app, so tables stay separate when several lab projects share one Postgres instance
+- If Postgres is unreachable, core meeting-note features (summary, classification, embeddings) still work. Only `/analyst-report*` and `/call-summary*` are affected.
 
 ---
 
-## 7. 레거시 기능
+## 6. Operations tips
 
-기존 텍스트 기반 엔드포인트도 그대로 사용 가능합니다.
+- Mount the mp3 store (`MP3_OUTPUT_DIR`) as a persistent volume.
+- Add a retention job (for example, delete files after 7 days).
+- Restrict CORS allowed origins to production domains.
+- To control STT cost, cap file length and add request authentication (JWT or API key).
+- The compliance keyword lists in `server/callcenter.py` (`BANNED_PHRASES` / `REQUIRED_DISCLOSURES`) are reference seeds. Have a compliance team review them before production use.
+- Ticker mapping (`server/data/tickers_kr.json`) is a static seed. For a real service, replace it with an official master such as KRX.
+
+---
+
+## 7. Legacy endpoints
+
+The existing text endpoints are still available.
 
 - `POST /summarize`
 - `POST /extract`
 - `POST /report`
 - `POST /classify`
 - `POST /embed`
-
